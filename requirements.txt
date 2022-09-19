@@ -1,0 +1,7 @@
+discord.py[speed]
+motor==3.0.0
+PyNaCl
+dnspython
+python-dotenv
+aiohttp
+youtube_dl
