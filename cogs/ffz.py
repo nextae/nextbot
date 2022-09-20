@@ -21,8 +21,8 @@ class FFZ(Cog):
     def __init__(self, bot: 'NextBot'):
         self.bot = bot
 
-        self.context_menu = app_commands.ContextMenu(name='React with FFZ emote', callback=self.react)
-        self.bot.tree.add_command(self.context_menu)
+        react_context_menu = app_commands.ContextMenu(name='React with FFZ emote', callback=self.react)
+        self.bot.tree.add_command(react_context_menu)
 
     async def fetch_ffz(self, endpoint: str, params: dict[str, str]) -> dict:
         """Fetches an endpoint from the FFZ API."""
@@ -40,7 +40,7 @@ class FFZ(Cog):
             if data_type == 'img':
                 return await response.read()
 
-    async def get_image(self, query: str, option: str | int, file_type: str):
+    async def get_image(self, query: str, option: str | int, file_type: str) -> dict | None:
         """Gets an image from FFZ API."""
 
         params = {'q': query}
@@ -72,11 +72,7 @@ class FFZ(Cog):
             img_url = 'https:' + data['emoticons'][index]['urls']['1']
 
         # Fetches image data
-        if file_type == 'file':
-            image = await self.fetch_image(img_url, 'file')
-        else:
-            image = await self.fetch_image(img_url, 'img')
-
+        image = await self.fetch_image(img_url, file_type)
         file_name = data['emoticons'][index]['name']
 
         return {'file': image, 'name': file_name}

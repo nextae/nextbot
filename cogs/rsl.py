@@ -75,7 +75,7 @@ class RSL(Cog):
 
         await self.send_scooby_stalker_message(after.guild, scooby_stalker_messages[after.status])
         
-    @Cog.listener('on_voice_stade_update')
+    @Cog.listener('on_voice_state_update')
     async def scooby_stalker_voice_state_update(self, member: Member, before: VoiceState, after: VoiceState):
         """Detects when Thunder changes his voice state."""
 

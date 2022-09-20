@@ -37,7 +37,7 @@ class Twitch(GroupCog, name='twitch'):
 
         self.check_live.start()
 
-    async def fetch(self, endpoint: str, params: dict[str, str]):
+    async def fetch(self, endpoint: str, params: dict[str, str]) -> dict | None:
         """Fetches data from the Twitch API."""
 
         async with self.bot.session.get(BASE_URL + endpoint, params=params, headers=HEADERS) as resp:
@@ -45,35 +45,28 @@ class Twitch(GroupCog, name='twitch'):
             if 'data' in response:
                 return response['data'] if response['data'] else None
 
-            return None
-
-    async def fetch_twitch_user(self, user: str):
+    async def fetch_twitch_user(self, user: str) -> dict | None:
         """Fetches the Twitch user from the Twitch API."""
 
         return await self.fetch('users', {'login': quote(user)})
 
-    async def fetch_user_avatar(self, user: str):
+    async def fetch_user_avatar(self, user: str) -> str | None:
         """Fetches the user's avatar url."""
 
         user_dict = await self.fetch_twitch_user(user)
-        return user_dict[0]['profile_image_url']
+        return user_dict[0]['profile_image_url'] if user_dict is not None else None
 
-    async def is_valid_user(self, user: str):
-        """Checks if the username is valid."""
-
-        return True if await self.fetch('users', {'login': quote(user)}) is not None else False
-
-    async def is_live(self, user: str):
+    async def fetch_live_status(self, user: str) -> dict | None:
         """Checks if the user is live and returns the stream info object."""
 
         return await self.fetch('streams', {'user_login': quote(user)})
 
-    async def fetch_game(self, game_name: str):
+    async def fetch_game(self, game_name: str) -> dict | None:
         """Fetches the Game object from the Twitch API."""
 
         return await self.fetch('games', {'name': quote(game_name)})
 
-    async def fetch_streams(self, game_id: str):
+    async def fetch_streams(self, game_id: str) -> dict | None:
         """Fetches the Stream object from the Twitch API."""
 
         return await self.fetch('streams', {'game_id': game_id, 'first': '6'})
@@ -116,20 +109,20 @@ class Twitch(GroupCog, name='twitch'):
         users = self.twitch_notifs.find({})
 
         async for user in users:
-            is_live_twitch = await self.is_live(user['twitch_user'])
-            if is_live_twitch is not None and not user['is_live']:
+            live_status = await self.fetch_live_status(user['twitch_user'])
+            if live_status is not None and not user['is_live']:
                 await self.twitch_notifs.update_one(
                     {'user_id': user['user_id'], 'twitch_user': user['twitch_user']},
                     {'$set': {'is_live': True}}
                 )
 
-            elif is_live_twitch is None and user['is_live']:
+            elif live_status is None and user['is_live']:
                 await self.twitch_notifs.update_one(
                     {'user_id': user['user_id'], 'twitch_user': user['twitch_user']},
                     {'$set': {'is_live': False}}
                 )
 
-    async def is_in_db(self, user_id: int, twitch_user: str):
+    async def is_in_db(self, user_id: int, twitch_user: str) -> bool:
         return True if await self.twitch_notifs.find_one({'user_id': user_id, 'twitch_user': twitch_user}) else False
 
     @loop(seconds=60)
@@ -139,12 +132,12 @@ class Twitch(GroupCog, name='twitch'):
         users = self.twitch_notifs.find({})
 
         async for user in users:
-            is_live_twitch = await self.is_live(user['twitch_user'])
-            if is_live_twitch is not None and not user['is_live']:
+            live_status = await self.fetch_live_status(user['twitch_user'])
+            if live_status is not None and not user['is_live']:
                 user_to_notify = self.bot.get_user(user['user_id'])
                 message = user['message'].replace('<mention>', user_to_notify.mention)
 
-                await self.send_notification(user_to_notify, message, user['where'], is_live_twitch[0])
+                await self.send_notification(user_to_notify, message, user['where'], live_status[0])
 
                 await self.twitch_notifs.update_one(
                     {'user_id': user['user_id'], 'twitch_user': user['twitch_user']},
@@ -152,7 +145,7 @@ class Twitch(GroupCog, name='twitch'):
                 )
 
                 print(f'{user["twitch_user"]} went live!')
-            elif is_live_twitch is None and user['is_live']:
+            elif live_status is None and user['is_live']:
                 await self.twitch_notifs.update_one(
                     {'user_id': user['user_id'], 'twitch_user': user['twitch_user']},
                     {'$set': {'is_live': False}}
@@ -182,14 +175,14 @@ class Twitch(GroupCog, name='twitch'):
     ):
         """Sets up the notification."""
 
-        if not await self.is_valid_user(twitch_user):
+        if await self.fetch_twitch_user(twitch_user) is None:
             return await error_embed(interaction, 'Invalid Twitch user!')
 
         notifs_entry = {
             'user_id': interaction.user.id,
             'twitch_user': twitch_user.lower(),
             'message': message,
-            'is_live': True if await self.is_live(twitch_user) else False,
+            'is_live': bool(await self.fetch_live_status(twitch_user)),
             'where': {
                 'guild_id': interaction.guild.id,
                 'channel_id': channel.id

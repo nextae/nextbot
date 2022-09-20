@@ -105,13 +105,13 @@ TITLES = {
 }
 
 
-def create_help_embed(category: str):
+def create_help_embed(category: str) -> Embed:
     """Creates a help embed."""
 
     return Embed(title=TITLES[category], description=create_help_embed_description(category))
 
 
-def create_help_embed_description(category: str):
+def create_help_embed_description(category: str) -> str:
     """Creates a description for the help embed."""
 
     description = ''

@@ -2,7 +2,7 @@ from re import search
 from typing import TYPE_CHECKING
 
 import discord
-from discord import app_commands, Interaction
+from discord import app_commands, Interaction, Message
 from discord.app_commands import command
 from discord.ext.commands import GroupCog
 from motor.motor_asyncio import AsyncIOMotorCollection
@@ -34,7 +34,7 @@ class ReactionRoles(GroupCog, name='reactionroles'):
         await interactions_error_handler(interaction, error)
 
     @staticmethod
-    async def add_role_to_embed(embed_message: discord.Message, name: str, reaction: str):
+    async def add_role_to_embed(embed_message: Message, name: str, reaction: str):
         """Adds a role to the ReactionRoles embed."""
 
         embed = embed_message.embeds[0]
@@ -43,7 +43,7 @@ class ReactionRoles(GroupCog, name='reactionroles'):
         await embed_message.add_reaction(reaction)
 
     @staticmethod
-    async def remove_role_from_embed(embed_message: discord.Message, name: str):
+    async def remove_role_from_embed(embed_message: Message, name: str):
         """Removes a role from the ReactionRoles embed."""
 
         embed = embed_message.embeds[0]
@@ -53,13 +53,16 @@ class ReactionRoles(GroupCog, name='reactionroles'):
         await embed_message.edit(embed=embed)
         await embed_message.clear_reaction(role.name)
 
-    async def get_embed_message(self, guild: discord.Guild):
+    async def get_embed_message(self, guild: discord.Guild) -> Message | None:
         """Gets the ReactionRoles embed Message."""
 
-        guild_query = await self.guilds.find_one({'guild_id': guild.id})
+        guild_data = await self.guilds.find_one({'guild_id': guild.id})
 
-        embed_channel = guild.get_channel(guild_query['channel_id'])
-        return await embed_channel.fetch_message(guild_query['embed_message_id'])
+        embed_channel = guild.get_channel(guild_data['channel_id'])
+        try:
+            return await embed_channel.fetch_message(guild_data['embed_message_id'])
+        except discord.NotFound:
+            return None
 
     @GroupCog.listener()
     async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent):
@@ -223,6 +226,8 @@ class ReactionRoles(GroupCog, name='reactionroles'):
         await self.reactions.insert_one(reactions_entry)
 
         embed_message = await self.get_embed_message(interaction.guild)
+        if embed_message is None:
+            return await error_embed(interaction, 'Couldn\'t find the Reaction Roles embed message!')
 
         await self.add_role_to_embed(embed_message, name, reaction)
 
@@ -248,6 +253,8 @@ class ReactionRoles(GroupCog, name='reactionroles'):
         await self.reactions.delete_one({'guild_id': interaction.guild.id, 'role_id': role.id})
 
         embed_message = await self.get_embed_message(interaction.guild)
+        if embed_message is None:
+            return await error_embed(interaction, 'Couldn\'t find the Reaction Roles embed message!')
 
         await self.remove_role_from_embed(embed_message, role.name)
 
@@ -276,7 +283,8 @@ class ReactionRoles(GroupCog, name='reactionroles'):
 
         # Clear embed
         embed_message = await self.get_embed_message(interaction.guild)
-        await embed_message.delete()
+        if embed_message is not None:
+            await embed_message.delete()
 
         # Remove roles
         roles = await self.reactions.find({'guild_id': guild_id})

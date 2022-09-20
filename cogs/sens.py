@@ -25,7 +25,7 @@ class Sens(Cog):
     def __init__(self, bot: 'NextBot'):
         self.bot = bot
 
-    def get_value(self, game: str):
+    def get_value(self, game: str) -> float:
         """Gets the value for a game."""
 
         return self.values.get(game.lower())

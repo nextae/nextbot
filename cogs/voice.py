@@ -28,6 +28,77 @@ class Voice(Cog):
     def __init__(self, bot: 'NextBot'):
         self.bot = bot
 
+    @staticmethod
+    def parse_duration(duration: int) -> str:
+        """Parses the duration to a readable string."""
+
+        return str(timedelta(seconds=duration)).lstrip('0:')
+
+    async def youtube_embed(self, data: YouTubeData) -> Embed:
+        """Creates an Embed with the song information."""
+
+        embed = Embed(title=data.title, url=data.url)
+
+        embed.set_thumbnail(url=data.thumbnail_url)
+        embed.add_field(name='Channel', value=data.channel)
+        embed.add_field(name='Duration', value=self.parse_duration(data.duration))
+
+        return embed
+
+    @staticmethod
+    async def tts_embed(data: TTSData) -> Embed:
+        """Creates an Embed with the TTS message information."""
+
+        return Embed(title='TTS Message:', description=data.text)
+
+    @staticmethod
+    def data_string(data: YouTubeData | TTSData) -> str:
+        """Returns a short string representing the data."""
+
+        if isinstance(data, YouTubeData):
+            return f'**[{data.title}]({data.url})**'
+        elif isinstance(data, TTSData):
+            text = f'{data.text[:30] + "..." if len(data.text) > 30 else data.text[:30]}'
+            return f'**TTS Message:** {text}'
+        else:
+            return ''
+
+    async def handle_queue(self, error: Exception, voice_client: VoiceClient):
+        """Handles the queue, called when an audio source finishes."""
+
+        if error is not None:
+            log.error(error)
+            return
+
+        guild_id = voice_client.guild.id
+        if guild_id not in self._queue:
+            return
+
+        if self._queue[guild_id]:
+            finished_source = self._queue[guild_id].pop(0)
+            if guild_id in self._loops:
+                self._queue[guild_id].append(finished_source)
+
+            if not self._queue[guild_id]:
+                del self._queue[guild_id]
+                return
+
+            await self.play_audio_source(voice_client, self._queue[guild_id][0])
+        else:
+            del self._queue[guild_id]
+
+    async def play_audio_source(self, voice_client: VoiceClient, data: YouTubeData | TTSData):
+        """Plays a source in the specified VoiceClient."""
+
+        def after(error: Exception):
+            fut = run_coroutine_threadsafe(self.handle_queue(error, voice_client), self.bot.loop)
+            try:
+                fut.result()
+            except Exception as e:
+                log.error(e)
+
+        voice_client.play(AudioSource(data), after=after)
+
     @Cog.listener()
     async def on_voice_state_update(self, member: Member, before: VoiceState, after: VoiceState):
         """Disconnects from voice if all other users left."""
@@ -167,81 +238,6 @@ class Voice(Cog):
         if guild_id in self._queue:
             del self._queue[guild_id]
 
-    @normal_command(name='enabletts')
-    @is_next()
-    async def enable_tts(self, ctx):
-        """Enables TTS."""
-
-        self.tts_enabled = True
-        print('TTS enabled')
-
-    @normal_command(name='disabletts')
-    @is_next()
-    async def disable_tts(self, ctx):
-        """Disables TTS."""
-
-        self.tts_enabled = False
-        print('TTS disabled')
-
-    async def handle_queue(self, error: Exception, voice_client: VoiceClient):
-        """Handles the queue, called when an audio source finishes."""
-
-        if error is not None:
-            log.error(error)
-            return
-
-        guild_id = voice_client.guild.id
-        if guild_id not in self._queue:
-            return
-
-        if self._queue[guild_id]:
-            finished_source = self._queue[guild_id].pop(0)
-            if guild_id in self._loops:
-                self._queue[guild_id].append(finished_source)
-
-            if not self._queue[guild_id]:
-                del self._queue[guild_id]
-                return
-
-            await self.play_audio_source(voice_client, self._queue[guild_id][0])
-        else:
-            del self._queue[guild_id]
-
-    async def play_audio_source(self, voice_client: VoiceClient, data: YouTubeData | TTSData):
-        """Plays a source in the specified VoiceClient."""
-
-        def after(error: Exception):
-            fut = run_coroutine_threadsafe(self.handle_queue(error, voice_client), self.bot.loop)
-            try:
-                fut.result()
-            except Exception as e:
-                log.error(e)
-
-        voice_client.play(AudioSource(data), after=after)
-
-    @staticmethod
-    def parse_duration(duration: int) -> str:
-        """Parses the duration to a readable string."""
-
-        return str(timedelta(seconds=duration)).lstrip('0:')
-
-    async def youtube_embed(self, data: YouTubeData) -> Embed:
-        """Creates an Embed with the song information."""
-
-        embed = Embed(title=data.title, url=data.url)
-
-        embed.set_thumbnail(url=data.thumbnail_url)
-        embed.add_field(name='Channel', value=data.channel)
-        embed.add_field(name='Duration', value=self.parse_duration(data.duration))
-
-        return embed
-
-    @staticmethod
-    async def tts_embed(data: TTSData) -> Embed:
-        """Creates an Embed with the TTS message information."""
-
-        return Embed(title='TTS Message:', description=data.text)
-
     @command()
     @app_commands.guild_only()
     @app_commands.describe(query='The YouTube link or query to search')
@@ -343,18 +339,6 @@ class Voice(Cog):
 
         await green_embed(interaction, f'⏩ Skipped!')
 
-    @staticmethod
-    def data_string(data: YouTubeData | TTSData) -> str:
-        """Returns a short string representing the data."""
-
-        if isinstance(data, YouTubeData):
-            return f'**[{data.title}]({data.url})**'
-        elif isinstance(data, TTSData):
-            text = f'{data.text[:30] + "..." if len(data.text) > 30 else data.text[:30]}'
-            return f'**TTS Message:** {text}'
-        else:
-            return ''
-
     @command()
     @app_commands.guild_only()
     async def queue(self, interaction: Interaction):
@@ -439,6 +423,22 @@ class Voice(Cog):
         else:
             self._loops.add(guild_id)
             await green_embed(interaction, f'🔁 Loop enabled!')
+
+    @normal_command(name='enabletts')
+    @is_next()
+    async def enable_tts(self, ctx):
+        """Enables TTS."""
+
+        self.tts_enabled = True
+        print('TTS enabled')
+
+    @normal_command(name='disabletts')
+    @is_next()
+    async def disable_tts(self, ctx):
+        """Disables TTS."""
+
+        self.tts_enabled = False
+        print('TTS disabled')
 
 
 async def setup(bot: 'NextBot'):

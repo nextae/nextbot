@@ -54,7 +54,6 @@ class QueryModal(Modal, title='Emote'):
     query = TextInput(label='Query', placeholder='Type the FFZ emote query here...', max_length=50)
 
     async def on_submit(self, interaction: Interaction):
-
         await interaction.response.defer()
 
     async def on_error(self, interaction: Interaction, error: Exception):
