@@ -111,7 +111,7 @@ class RolesView(View):
 
         if roles_to_add:
             try:
-                await member.add_roles(*roles_to_add)
+                await member.add_roles(*roles_to_add, atomic=False)
             except (Forbidden, HTTPException):
                 return await error_embed(
                     interaction, 'I couldn\'t add the roles! Probably missing permissions', ephemeral=True
@@ -151,7 +151,7 @@ class RolesView(View):
 
         if roles_to_remove:
             try:
-                await member.remove_roles(*roles_to_remove)
+                await member.remove_roles(*roles_to_remove, atomic=False)
             except (Forbidden, HTTPException):
                 return await error_embed(
                     interaction, 'I couldn\'t remove the roles! Probably missing permissions', ephemeral=True
