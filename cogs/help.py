@@ -57,19 +57,32 @@ COMMANDS_DESCRIPTIONS = {
         ),
         ('/upload <query> [number] [random]', 'Same as `/ffz` but lets you upload the emote.', '/upload Pepega')
     ],
-    'reaction_roles': [
+    'roles': [
         (
-            '/reactionroles setup <channel>',
-            'Sets up Reaction Roles in the mentioned channel.',
-            '/reactionroles setup #roles'
+            '/roles setup <channel>',
+            'Sets up the Roles selection in the given channel.',
+            '/roles setup #roles'
         ),
-        ('/reactionroles add', 'Creates a new role and adds it to Reaction Roles.', None),
         (
-            '/reactionroles remove <role>',
-            'Removes a role from the server and Reaction Roles',
-            '/reactionroles remove Valorant'
+            '/roles add [role] [emote] [description] [name] [color]',
+            'Adds a role to the Roles selection. '
+            'Can be either an existing role (use the `role` argument then) '
+            'or the bot can create a new role (use the `name` and `color` arguments then).'
+            'The emote and description will be visible in the selection menu if setup',
+            None
         ),
-        ('/reactionroles reset', 'Completely resets Reaction Roles', None)
+        (
+            '/roles edit <role> <what_to_edit> <new_value>',
+            'Edits the Emote or Description of a role in the selection menu.',
+            None
+        ),
+        (
+            '/roles remove <role> [remove_from_server]',
+            'Removes a role from the Roles selection. '
+            'You can use the `remove_from_server` argument if you want the bot to delete the role from the server.',
+            '/roles remove Valorant'
+        ),
+        ('/roles reset', 'Completely resets the setup Roles selection', None)
     ],
     'voice': [
         (
@@ -100,7 +113,7 @@ TITLES = {
     'misc': 'Miscellaneous',
     'twitch': 'Twitch',
     'ffz': 'FFZ',
-    'reaction_roles': 'Reaction Roles',
+    'roles': 'Roles',
     'voice': 'Voice'
 }
 
@@ -162,15 +175,15 @@ class HelpView(View):
 
         await interaction.response.edit_message(embed=self.embeds['ffz'], view=self)
 
-    @button(label='Reaction Roles', style=ButtonStyle.grey, emoji='<:reaction_roles:926152364015120394>')
-    async def reaction_roles(self, interaction: Interaction, btn: Button):
-        """Displays the Reaction Roles help page."""
+    @button(label='Roles', style=ButtonStyle.grey, emoji='<:reaction_roles:926152364015120394>')
+    async def roles(self, interaction: Interaction, btn: Button):
+        """Displays the Roles selection help page."""
 
         btn.disabled = True
         getattr(self, self.current_page).disabled = False
-        self.current_page = 'reaction_roles'
+        self.current_page = 'roles'
 
-        await interaction.response.edit_message(embed=self.embeds['reaction_roles'], view=self)
+        await interaction.response.edit_message(embed=self.embeds['roles'], view=self)
 
     @button(label='Voice', style=ButtonStyle.grey, emoji='<:voice:926152363922829382>')
     async def voice(self, interaction: Interaction, btn: Button):

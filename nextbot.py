@@ -22,7 +22,7 @@ class NextBot(Bot):
         'cogs.ffz',
         'cogs.help',
         'cogs.misc',
-        'cogs.reaction_roles',
+        'cogs.roles',
         'cogs.rsl',
         'cogs.sens',
         'cogs.twitch',
