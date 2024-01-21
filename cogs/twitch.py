@@ -9,7 +9,7 @@ from discord import app_commands, Interaction
 from discord.app_commands import command
 from discord.ext.commands import GroupCog
 from discord.ext.tasks import loop
-from motor.motor_asyncio import AsyncIOMotorCollection
+from motor.core import AgnosticCollection
 
 from utils.embeds import *
 
@@ -26,7 +26,7 @@ HEADERS = {
 
 class Twitch(GroupCog, name='twitch'):
     bot: 'NextBot'
-    twitch_notifs: AsyncIOMotorCollection
+    twitch_notifs: AgnosticCollection
 
     def __init__(self, bot: 'NextBot'):
         self.bot = bot

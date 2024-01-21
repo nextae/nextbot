@@ -1,3 +1,5 @@
+import sys
+import traceback
 from logging import getLogger
 
 from discord import Interaction
@@ -61,5 +63,5 @@ async def interactions_error_handler(interaction: Interaction, error: app_comman
         if error_channel is not None:
             await error_embed(error_channel, str(error), None)
 
-    log.error(error)
-    raise error
+    await error_embed(interaction, str(error))
+    print(traceback.format_exc(), file=sys.stderr)

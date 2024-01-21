@@ -1,11 +1,11 @@
 from asyncio import get_event_loop, AbstractEventLoop
 from urllib.parse import quote
 
-import youtube_dl
+import yt_dlp
 from discord import PCMVolumeTransformer, FFmpegPCMAudio
 
 # Suppress noise about console usage from errors
-youtube_dl.utils.bug_reports_message = lambda: ''
+yt_dlp.utils.bug_reports_message = lambda: ''
 
 
 ytdl_format_options = {
@@ -24,7 +24,7 @@ ytdl_format_options = {
 
 ffmpeg_options = {'options': '-vn'}
 
-ytdl = youtube_dl.YoutubeDL(ytdl_format_options)
+ytdl = yt_dlp.YoutubeDL(ytdl_format_options)
 
 
 __all__ = ('YouTubeData', 'TTSData', 'AudioSource')

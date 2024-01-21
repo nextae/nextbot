@@ -238,6 +238,8 @@ class Voice(Cog):
         if guild_id in self._queue:
             del self._queue[guild_id]
 
+        await green_embed(interaction, 'Disconnected!')
+
     @command()
     @app_commands.guild_only()
     @app_commands.describe(query='The YouTube link or query to search')
@@ -251,6 +253,8 @@ class Voice(Cog):
         hostname = urlparse(query).hostname
         if hostname is not None and hostname.lstrip('www.') not in ('youtube.com', 'youtu.be', 'music.youtube.com'):
             return await error_embed(interaction, 'Invalid YouTube link!')
+
+        await interaction.response.defer()
 
         guild_id = interaction.guild.id
 
@@ -266,7 +270,7 @@ class Voice(Cog):
 
             embed = await self.youtube_embed(data)
             embed.set_author(name='Added to queue:', icon_url=self.bot.user.avatar.url)
-            await interaction.response.send_message(embed=embed)
+            await interaction.followup.send(embed=embed)
 
             self._queue[guild_id].append(data)
         else:
@@ -277,7 +281,7 @@ class Voice(Cog):
 
             embed = await self.youtube_embed(data)
             embed.set_author(name='Now playing:', icon_url=self.bot.user.avatar.url)
-            await interaction.response.send_message(embed=embed)
+            await interaction.followup.send(embed=embed)
 
             voice_client = interaction.guild.voice_client or await user.voice.channel.connect()
             self._queue[guild_id] = [data]

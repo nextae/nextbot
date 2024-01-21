@@ -67,9 +67,9 @@ class FFZ(Cog):
 
         # Gets the image_url from json data
         try:
-            img_url = 'https:' + data['emoticons'][index]['urls']['2']
+            img_url = data['emoticons'][index]['urls']['2']
         except KeyError:
-            img_url = 'https:' + data['emoticons'][index]['urls']['1']
+            img_url = data['emoticons'][index]['urls']['1']
 
         # Fetches image data
         image = await self.fetch_image(img_url, file_type)

@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Literal
 import discord
 from discord import app_commands, Interaction, Member
 from discord.app_commands import command, Range
+from discord.ext import commands
 from discord.ext.commands import Context, Cog, command as normal_command
 
 from utils.checks import is_next
@@ -35,22 +36,19 @@ class Misc(Cog):
         describe_context_menu = app_commands.ContextMenu(name='Describe', callback=self.describe)
         self.bot.tree.add_command(describe_context_menu)
 
-    @staticmethod
-    async def iq(interaction: Interaction, member: Member):
+    async def iq(self, interaction: Interaction, member: Member):
         """Shows member's IQ."""
 
         await green_embed(interaction, f'{member.mention}\'s IQ is {randrange(20, 201)}')
 
-    @staticmethod
-    async def pp_size(interaction: Interaction, member: Member):
+    async def pp_size(self, interaction: Interaction, member: Member):
         """Shows member's PP size."""
 
         pp = f'8{"=" * randrange(1, 16)}D'
 
         await green_embed(interaction, f'{member.mention}\'s PP:\n{pp}')
 
-    @staticmethod
-    async def describe(interaction: Interaction, member: Member):
+    async def describe(self, interaction: Interaction, member: Member):
         """Shows a random response about the member."""
 
         responses = (
@@ -171,6 +169,38 @@ class Misc(Cog):
 
     @normal_command()
     @is_next()
+    async def sync(self, ctx: Context, guilds: commands.Greedy[discord.Object], spec: Literal["~", "*", "^"] = None):
+        if not guilds:
+            if spec == "~":
+                synced = await ctx.bot.tree.sync(guild=ctx.guild)
+            elif spec == "*":
+                ctx.bot.tree.copy_global_to(guild=ctx.guild)
+                synced = await ctx.bot.tree.sync(guild=ctx.guild)
+            elif spec == "^":
+                ctx.bot.tree.clear_commands(guild=ctx.guild)
+                await ctx.bot.tree.sync(guild=ctx.guild)
+                synced = []
+            else:
+                synced = await ctx.bot.tree.sync()
+
+            await ctx.send(
+                f"Synced {len(synced)} commands {'globally' if spec is None else 'to the current guild.'}"
+            )
+            return
+
+        ret = 0
+        for guild in guilds:
+            try:
+                await ctx.bot.tree.sync(guild=guild)
+            except discord.HTTPException:
+                pass
+            else:
+                ret += 1
+
+        await ctx.send(f"Synced the tree to {ret}/{len(guilds)}.")
+
+    @normal_command()
+    @is_next()
     async def load(self, ctx: Context, name: str):
         """Loads an extension."""
 
@@ -189,6 +219,15 @@ class Misc(Cog):
         """Reloads an extension."""
 
         await self.bot.reload_extension(f'cogs.{name}')
+
+    @Cog.listener('on_raw_member_remove')
+    async def log_member_who_leave(self, payload: discord.RawMemberRemoveEvent):
+        """Logs members who leave the server."""
+
+        guild = self.bot.get_guild(payload.guild_id)
+        guild_text = str(guild) if guild else payload.guild_id
+
+        print(f'{payload.user} left {guild_text} (id {payload.user.id})')
 
 
 async def setup(bot: 'NextBot'):

@@ -5,7 +5,7 @@ import emoji
 from discord import app_commands, Interaction, Message, Emoji, Color
 from discord.app_commands import command, Range
 from discord.ext.commands import GroupCog
-from motor.motor_asyncio import AsyncIOMotorCollection
+from motor.core import AgnosticCollection
 
 from utils.embeds import error_embed, success_embed, green_embed, Embed
 from utils.errors import interactions_error_handler
@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 
 class Roles(GroupCog, name='roles'):
     bot: 'NextBot'
-    roles: AsyncIOMotorCollection
+    roles: AgnosticCollection
 
     def __init__(self, bot: 'NextBot'):
         self.bot = bot
@@ -32,7 +32,7 @@ class Roles(GroupCog, name='roles'):
     async def cog_app_command_error(self, interaction: Interaction, error: app_commands.AppCommandError):
         """Handles the errors."""
 
-        if hasattr(interaction.command, 'on_error'):
+        if interaction.command.on_error is not None:
             return
 
         await interactions_error_handler(interaction, error)

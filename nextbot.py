@@ -1,23 +1,21 @@
-from asyncio import run
-from logging import basicConfig
 from os import getenv
 
+import discord
 from aiohttp import ClientSession
-from discord import Intents, Game, Emoji, Object
+from discord import Intents, Game, Emoji
 from discord.ext.commands import Bot
 from discord.utils import get
 from dotenv import load_dotenv
-from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
+from motor.core import AgnosticDatabase
+from motor.motor_asyncio import AsyncIOMotorClient
 
-basicConfig(format='[%(asctime)s] [%(levelname)s - %(name)s] %(message)s')
+discord.utils.setup_logging()
 load_dotenv()
-
-GUILD_IDS_TO_SYNC = (479412235115036673, 558697683921928236)
 
 
 class NextBot(Bot):
     session: ClientSession
-    db: AsyncIOMotorDatabase
+    db: AgnosticDatabase
     extensions: tuple[str] = (
         'cogs.ffz',
         'cogs.help',
@@ -25,6 +23,7 @@ class NextBot(Bot):
         'cogs.roles',
         'cogs.rsl',
         'cogs.sens',
+        'cogs.stats',
         'cogs.twitch',
         'cogs.voice'
     )
@@ -32,7 +31,12 @@ class NextBot(Bot):
     def __init__(self):
         """Initiates the bot, removes the default help command and attaches the MongoDB client."""
 
-        super().__init__(['!', '.'], intents=Intents.all(), activity=Game('nextbot | /help'), case_insensitive=True)
+        super().__init__(
+            ['!', '.'],
+            intents=Intents.all(),
+            activity=Game('nextbot | /help'),
+            case_insensitive=True
+        )
 
         self.remove_command('help')
 
@@ -48,10 +52,7 @@ class NextBot(Bot):
         for ext in self.extensions:
             await self.load_extension(ext)
 
-        for guild_id in GUILD_IDS_TO_SYNC:
-            guild = Object(id=guild_id)
-            self.tree.copy_global_to(guild=guild)
-            await self.tree.sync(guild=guild)
+        # await self.tree.sync()
 
     async def close(self):
         """Closes the aiohttp session and the bot."""
@@ -70,11 +71,9 @@ bot = NextBot()
 
 @bot.event
 async def on_ready():
-    print('----------------------- Bot is ready! -----------------------')
+    print(f'-------------------- Bot is ready! --------------------')
+    print(f'Logged in as {bot.user}'.center(55))
+    print(f'-------------------------------------------------------')
 
 
-async def main():
-    async with bot:
-        await bot.start(getenv('TOKEN'))
-
-run(main())
+bot.run(getenv('TOKEN'), log_handler=None)

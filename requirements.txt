@@ -1,8 +1,9 @@
 discord.py[speed]
-motor==3.0.0
-emoji==2.1.0
+discord.py
+motor
+emoji
 PyNaCl
 dnspython
 python-dotenv
 aiohttp
-youtube_dl
+yt-dlp
