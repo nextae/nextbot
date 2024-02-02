@@ -29,16 +29,15 @@ class NextBot(Bot):
     )
 
     def __init__(self):
-        """Initiates the bot, removes the default help command and attaches the MongoDB client."""
+        """Initiates the bot and attaches the MongoDB client."""
 
         super().__init__(
             ['!', '.'],
             intents=Intents.all(),
             activity=Game('nextbot | /help'),
-            case_insensitive=True
+            case_insensitive=True,
+            help_command=None
         )
-
-        self.remove_command('help')
 
         mongo_client = AsyncIOMotorClient(
             f'mongodb+srv://{getenv("MONGODB_USER")}:{getenv("MONGODB_PASSWORD")}@cluster.sbjxe.mongodb.net'
@@ -46,13 +45,11 @@ class NextBot(Bot):
         self.db = mongo_client['nextbot']
 
     async def setup_hook(self):
-        """Attaches an aiohttp session to the bot, loads the extensions and syncs the application commands."""
+        """Attaches an aiohttp session to the bot and loads the extensions."""
 
         self.session = ClientSession()
         for ext in self.extensions:
             await self.load_extension(ext)
-
-        # await self.tree.sync()
 
     async def close(self):
         """Closes the aiohttp session and the bot."""

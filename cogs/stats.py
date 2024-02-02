@@ -1,21 +1,29 @@
 from collections import defaultdict
+from datetime import time
+from logging import getLogger
 from typing import TYPE_CHECKING, TypedDict, Literal
 
 import discord
 from discord import app_commands, Interaction
 from discord.ext import commands
 from discord.ext.commands import GroupCog, Context
+from discord.ext.tasks import loop
 from motor.core import AgnosticCollection
 
 from utils.checks import is_next
 from utils.embeds import green_embed, Embed
 from utils.errors import interactions_error_handler
+from utils.views import PaginationView
 
 if TYPE_CHECKING:
     from nextbot import NextBot
 
 
+log = getLogger(__name__)
+
+
 class ChannelEntry(TypedDict):
+    guild_id: int
     channel_id: int
     user_id: int
     messages: int
@@ -31,11 +39,15 @@ class Stats(GroupCog, name='stats'):
     bot: 'NextBot'
     stats: AgnosticCollection
     stats_weekly: AgnosticCollection
+    weekly_channels: AgnosticCollection
 
     def __init__(self, bot: 'NextBot'):
         self.bot = bot
         self.stats = self.bot.db['stats']
         self.stats_weekly = self.bot.db['stats_weekly']
+        self.weekly_channels = self.bot.db['stats_weekly_channels']
+
+        self.weekly_stats.start()
 
     async def cog_app_command_error(self, interaction: Interaction, error: app_commands.AppCommandError):
         """Handles the errors."""
@@ -47,6 +59,7 @@ class Stats(GroupCog, name='stats'):
 
     async def update_stats(
         self,
+        guild_id: int,
         channel_id: int,
         user_id: int,
         messages: int = 0,
@@ -57,9 +70,9 @@ class Stats(GroupCog, name='stats'):
         """Updates the stats for the given channel id and user id. The values are the amount to increment by."""
 
         existing_entry = await self.stats.find_one({'channel_id': channel_id, 'user_id': user_id})
-
         if existing_entry is None:
             entry = ChannelEntry(
+                guild_id=guild_id,
                 channel_id=channel_id,
                 user_id=user_id,
                 messages=messages,
@@ -77,6 +90,7 @@ class Stats(GroupCog, name='stats'):
 
     async def update_stats_weekly(
         self,
+        guild_id: int,
         channel_id: int,
         user_id: int,
         messages: int = 0,
@@ -87,9 +101,9 @@ class Stats(GroupCog, name='stats'):
         """Updates the stats for the given channel id and user id. The values are the amount to increment by."""
 
         existing_entry = await self.stats_weekly.find_one({'channel_id': channel_id, 'user_id': user_id})
-
         if existing_entry is None:
             entry = ChannelEntry(
+                guild_id=guild_id,
                 channel_id=channel_id,
                 user_id=user_id,
                 messages=messages,
@@ -112,23 +126,50 @@ class Stats(GroupCog, name='stats'):
         words = len(message.content.split()) if message.content else 0
         files = len(message.attachments)
 
-        await self.update_stats(message.channel.id, message.author.id, messages=1, words=words, files=files)
-        await self.update_stats_weekly(message.channel.id, message.author.id, messages=1, words=words, files=files)
+        await self.update_stats(
+            message.guild.id,
+            message.channel.id,
+            message.author.id,
+            messages=1,
+            words=words,
+            files=files
+        )
+        await self.update_stats_weekly(
+            message.guild.id,
+            message.channel.id,
+            message.author.id,
+            messages=1,
+            words=words,
+            files=files
+        )
 
     @GroupCog.listener('on_raw_message_delete')
     async def save_message_remove(self, payload: discord.RawMessageDeleteEvent):
         """Saves the removed message stats."""
 
         message = payload.cached_message
+        if message is None:
+            return
 
-        words = 0
-        files = 0
-        if message is not None:
-            words = -len(message.content.split()) if message.content else 0
-            files = -len(message.attachments)
+        words = -len(message.content.split()) if message.content else 0
+        files = -len(message.attachments)
 
-        await self.update_stats(message.channel.id, message.author.id, messages=-1, words=words, files=files)
-        await self.update_stats_weekly(message.channel.id, message.author.id, messages=-1, words=words, files=files)
+        await self.update_stats(
+            payload.guild_id,
+            payload.channel_id,
+            message.author.id,
+            messages=-1,
+            words=words,
+            files=files
+        )
+        await self.update_stats_weekly(
+            payload.guild_id,
+            payload.channel_id,
+            message.author.id,
+            messages=-1,
+            words=words,
+            files=files
+        )
 
     @GroupCog.listener('on_message_edit')
     async def save_message_edit(self, before: discord.Message, after: discord.Message):
@@ -138,22 +179,32 @@ class Stats(GroupCog, name='stats'):
         after_words = len(after.content.split()) if after.content else 0
 
         if before_words != after_words:
-            await self.update_stats(after.channel.id, after.author.id, words=after_words - before_words)
-            await self.update_stats_weekly(after.channel.id, after.author.id, words=after_words - before_words)
+            await self.update_stats(
+                after.guild.id,
+                after.channel.id,
+                after.author.id,
+                words=after_words - before_words
+            )
+            await self.update_stats_weekly(
+                after.guild.id,
+                after.channel.id,
+                after.author.id,
+                words=after_words - before_words
+            )
 
     @GroupCog.listener('on_raw_reaction_add')
     async def save_reaction(self, payload: discord.RawReactionActionEvent):
         """Saves the reaction."""
 
-        await self.update_stats(payload.channel_id, payload.user_id, reactions=1)
-        await self.update_stats_weekly(payload.channel_id, payload.user_id, reactions=1)
+        await self.update_stats(payload.guild_id, payload.channel_id, payload.user_id, reactions=1)
+        await self.update_stats_weekly(payload.guild_id, payload.channel_id, payload.user_id, reactions=1)
 
     @GroupCog.listener('on_raw_reaction_remove')
     async def save_reaction_remove(self, payload: discord.RawReactionActionEvent):
         """Saves the reaction removal."""
 
-        await self.update_stats(payload.channel_id, payload.user_id, reactions=-1)
-        await self.update_stats_weekly(payload.channel_id, payload.user_id, reactions=-1)
+        await self.update_stats(payload.guild_id, payload.channel_id, payload.user_id, reactions=-1)
+        await self.update_stats_weekly(payload.guild_id, payload.channel_id, payload.user_id, reactions=-1)
 
     @app_commands.command()
     @app_commands.guild_only()
@@ -164,7 +215,7 @@ class Stats(GroupCog, name='stats'):
         user = user or interaction.user
         if stat is None:
             query = self.stats.aggregate([
-                {'$match': {'user_id': user.id}},
+                {'$match': {'guild_id': interaction.guild_id, 'user_id': user.id}},
                 {
                     '$group': {
                         '_id': '$user_id',
@@ -191,17 +242,21 @@ class Stats(GroupCog, name='stats'):
 
         stat = stat.lower()
 
-        query = self.stats.find({'user_id': user.id}).sort(stat, -1)
-        embed = Embed(
-            title=f'{stat.title()} Stats',
-            description=f'{user.mention}\n\n' + '\n'.join(
-                f'{i}. <#{entry["channel_id"]}> - {entry[stat]:,} {stat}'
-                for i, entry in enumerate(await query.to_list(length=20), 1)
-            )
-        )
-        embed.set_thumbnail(url=user.display_avatar.url)
+        query = self.stats.find({'guild_id': interaction.guild_id, 'user_id': user.id}).sort(stat, -1)
+        data = [entry async for entry in query]
 
-        await interaction.response.send_message(embed=embed)
+        view = PaginationView(
+            f'{stat.title()} Stats',
+            data,
+            25,
+            lambda d: (f'<#{e["channel_id"]}> - **{e[stat]:,}** {stat}' for e in d),
+            interaction,
+            user.mention + '\n\n',
+            user.display_avatar.url
+        )
+
+        await interaction.response.send_message(embed=view.embed(), view=view)
+
 
     @app_commands.command()
     @app_commands.guild_only()
@@ -211,6 +266,7 @@ class Stats(GroupCog, name='stats'):
 
         stat = stat.lower()
         query = self.stats.aggregate([
+            {'$match': {'guild_id': interaction.guild_id}},
             {
                 '$group': {
                     '_id': '$user_id',
@@ -220,15 +276,17 @@ class Stats(GroupCog, name='stats'):
             {'$sort': {'total': -1}}
         ])
 
-        embed = Embed(
-            title=f'Users {stat.title()} Leaderboard',
-            description='\n'.join(
-                f'{i}. <@{entry["_id"]}> - {entry["total"]:,} {stat}'
-                for i, entry in enumerate(await query.to_list(length=20), 1)
-            )
+        data = [entry async for entry in query]
+
+        view = PaginationView(
+            f'Users {stat.title()} Leaderboard',
+            data,
+            25,
+            lambda d: (f'<@{e["_id"]}> - **{e["total"]:,}** {stat}' for e in d),
+            interaction
         )
 
-        await interaction.response.send_message(embed=embed)
+        await interaction.response.send_message(embed=view.embed(), view=view)
 
     @app_commands.command()
     @app_commands.guild_only()
@@ -271,15 +329,18 @@ class Stats(GroupCog, name='stats'):
         stat = stat.lower()
 
         query = self.stats.find({'channel_id': channel.id}).sort(stat, -1)
-        embed = Embed(
-            title=f'{stat.title()} Stats',
-            description=f'{channel.mention}\n\n' + '\n'.join(
-                f'{i}. <@{entry["user_id"]}> - {entry[stat]:,} {stat}'
-                for i, entry in enumerate(await query.to_list(length=20), 1)
-            )
+        data = [entry async for entry in query]
+
+        view = PaginationView(
+            f'{stat.title()} Stats',
+            data,
+            25,
+            lambda d: (f'<@{e["user_id"]}> - **{e[stat]:,}** {stat}' for e in d),
+            interaction,
+            channel.mention + '\n\n'
         )
 
-        await interaction.response.send_message(embed=embed)
+        await interaction.response.send_message(embed=view.embed(), view=view)
 
     @app_commands.command()
     @app_commands.guild_only()
@@ -289,6 +350,7 @@ class Stats(GroupCog, name='stats'):
 
         stat = stat.lower()
         query = self.stats.aggregate([
+            {'$match': {'guild_id': interaction.guild_id}},
             {
                 '$group': {
                     '_id': '$channel_id',
@@ -298,15 +360,33 @@ class Stats(GroupCog, name='stats'):
             {'$sort': {'total': -1}}
         ])
 
-        embed = Embed(
-            title=f'Channels {stat.title()} Leaderboard',
-            description='\n'.join(
-                f'{i}. <#{entry["_id"]}> - {entry["total"]:,} {stat}'
-                for i, entry in enumerate(await query.to_list(length=20), 1)
-            )
+        data = [entry async for entry in query]
+
+        view = PaginationView(
+            f'Channels {stat.title()} Leaderboard',
+            data,
+            25,
+            lambda d: (f'<#{e["_id"]}> - **{e["total"]:,}** {stat}' for e in d),
+            interaction
         )
 
-        await interaction.response.send_message(embed=embed)
+        await interaction.response.send_message(embed=view.embed(), view=view)
+
+    @app_commands.command(name='weekly-channel')
+    @app_commands.guild_only()
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.checks.has_permissions(administrator=True)
+    @app_commands.describe(channel='The channel to set as the weekly channel')
+    async def weekly_channel(self, interaction: Interaction, channel: discord.TextChannel):
+        """Set the weekly channel."""
+
+        await self.weekly_channels.update_one(
+            {'guild_id': interaction.guild_id},
+            {'$set': {'guild_id': interaction.guild_id, 'channel_id': channel.id}},
+            upsert=True
+        )
+
+        await green_embed(interaction, f'Set the weekly channel to {channel.mention}!')
 
     @commands.command()
     @is_next()
@@ -325,6 +405,7 @@ class Stats(GroupCog, name='stats'):
 
             data: dict[int, ChannelEntry] = defaultdict(
                 lambda: ChannelEntry(
+                    guild_id=0,
                     channel_id=0,
                     user_id=0,
                     messages=0,
@@ -346,6 +427,7 @@ class Stats(GroupCog, name='stats'):
 
             entries = []
             for user_id, entry in data.items():
+                entry['guild_id'] = ctx.guild.id
                 entry['channel_id'] = channel.id
                 entry['user_id'] = user_id
                 entries.append(entry)
@@ -354,6 +436,78 @@ class Stats(GroupCog, name='stats'):
                 await self.stats.insert_many(entries)
 
         await green_embed(ctx, 'Caching done!', content=ctx.author.mention)
+
+    @loop(time=time(hour=19, minute=0))
+    async def weekly_stats(self):
+        """Posts the weekly stats on Sundays 19 UTC."""
+
+        await self.bot.wait_until_ready()
+
+        now = discord.utils.utcnow()
+        if now.weekday() != 6:
+            return
+
+        async for entry in self.weekly_channels.find():
+            channel = self.bot.get_channel(entry['channel_id'])
+            if channel is None:
+                continue
+
+            for stat in ('messages', 'words', 'reactions', 'files'):
+                # Channels
+                query = self.stats_weekly.aggregate([
+                    {'$match': {'guild_id': entry['guild_id']}},
+                    {
+                        '$group': {
+                            '_id': '$channel_id',
+                            'total': {'$sum': f'${stat}'},
+                        }
+                    },
+                    {'$sort': {'total': -1}}
+                ])
+
+                data = await query.to_list(length=25)
+
+                embed = Embed(
+                    title=f'Weekly Channels Leaderboard - {stat.title()}',
+                    description='\n'.join(
+                        f'{i}. <#{entry["_id"]}> - **{entry["total"]:,}** {stat}'
+                        for i, entry in enumerate(data, 1)
+                    )
+                )
+
+                try:
+                    await channel.send(embed=embed)
+                except discord.HTTPException:
+                    log.warning(f'Couldn\'t send a weekly stats message in the {channel} channel!')
+
+                # Users
+                query = self.stats_weekly.aggregate([
+                    {'$match': {'guild_id': entry['guild_id']}},
+                    {
+                        '$group': {
+                            '_id': '$user_id',
+                            'total': {'$sum': f'${stat}'},
+                        }
+                    },
+                    {'$sort': {'total': -1}}
+                ])
+
+                data = await query.to_list(length=25)
+
+                embed = Embed(
+                    title=f'Weekly Users Leaderboard - {stat.title()}',
+                    description='\n'.join(
+                        f'{i}. <@{entry["_id"]}> - **{entry["total"]:,}** {stat}'
+                        for i, entry in enumerate(data, 1)
+                    )
+                )
+
+                try:
+                    await channel.send(embed=embed)
+                except discord.HTTPException:
+                    log.warning(f'Couldn\'t send a weekly stats message in the {channel} channel!')
+
+        await self.stats_weekly.delete_many({})
 
 
 async def setup(bot: 'NextBot'):

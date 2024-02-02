@@ -1,18 +1,24 @@
+import math
 from logging import getLogger
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Generator, Callable
 
+import discord
 from discord import ButtonStyle, Interaction, Message, HTTPException, Forbidden
 from discord.ui import View, Button, button, Modal, TextInput, Select, select
-from discord.utils import get
 
-from utils.embeds import error_embed, green_embed
+from utils.embeds import error_embed, green_embed, Embed
 
 if TYPE_CHECKING:
     from nextbot import NextBot
 
 log = getLogger(__name__)
 
-__all__ = ('YesNoView', 'QueryModal', 'RolesView')
+__all__ = (
+    'YesNoView',
+    'QueryModal',
+    'RolesView',
+    'PaginationView'
+)
 
 
 class YesNoView(View):
@@ -107,7 +113,7 @@ class RolesView(View):
                 if role not in member.roles:
                     roles_to_add.append(role)
             else:
-                roles_not_found.append(get(s.options, value=str(role_id)).label)
+                roles_not_found.append(discord.utils.get(s.options, value=str(role_id)).label)
 
         if roles_to_add:
             try:
@@ -147,7 +153,7 @@ class RolesView(View):
                 if role in member.roles:
                     roles_to_remove.append(role)
             else:
-                roles_not_found.append(get(s.options, value=str(role_id)).label)
+                roles_not_found.append(discord.utils.get(s.options, value=str(role_id)).label)
 
         if roles_to_remove:
             try:
@@ -170,3 +176,100 @@ class RolesView(View):
             return await green_embed(interaction, 'You already don\'t have any of the selected roles', ephemeral=True)
 
         await green_embed(interaction, description, ephemeral=True)
+
+
+class PaginationView(View):
+    def __init__(
+        self,
+        title: str,
+        data: list[Any],
+        per_page: int,
+        entry_generator: Callable[[Any], Generator[str, None, None]],
+        interaction: Interaction = None,
+        description: str = None,
+        thumbnail_url: str = None
+    ):
+        super().__init__(timeout=600)
+
+        self.title = title
+        self.description = description
+        self.data = data
+        self.per_page = per_page
+        self.pages = math.ceil(len(data) / per_page) or 1
+        self.generator = entry_generator
+        self.interaction = interaction
+        self.thumbnail_url = thumbnail_url
+
+        self.current_page = 0
+        self.update_buttons()
+
+    async def on_timeout(self) -> None:
+        """Disables the buttons."""
+
+        if self.interaction is None:
+            return
+
+        try:
+            message = await self.interaction.original_response()
+        except discord.HTTPException:
+            return
+
+        self.previous.disabled = True
+        self.next.disabled = True
+        try:
+            await message.edit(view=self)
+        except discord.HTTPException:
+            pass
+
+    def update_buttons(self):
+        """Updates the View data based on the current page."""
+
+        self.current_info.label = f'Page {self.current_page + 1}/{self.pages}'
+        self.previous.disabled = self.current_page == 0
+        self.next.disabled = self.current_page == self.pages - 1
+
+    def embed(self) -> discord.Embed:
+        """Creates an embed for the current page."""
+
+        data = self.data[self.current_page * self.per_page : (self.current_page + 1) * self.per_page]
+        embed = Embed(
+            title=self.title,
+            description=(self.description or '') + '\n'.join(
+                f'{i + self.current_page * self.per_page}. {entry}'
+                for i, entry in enumerate(self.generator(data), 1)
+            )
+        )
+        if self.thumbnail_url:
+            embed.set_thumbnail(url=self.thumbnail_url)
+
+        return embed
+
+    @discord.ui.button(style=discord.ButtonStyle.grey, emoji='⬅', custom_id='previous_page')
+    async def previous(self, interaction: Interaction, btn: discord.ui.Button):
+        """Goes to the previous page."""
+
+        if self.interaction is not None and interaction.user.id != self.interaction.user.id:
+            return await error_embed(interaction, 'You are not allowed to do this!')
+
+        self.current_page -= 1
+        self.update_buttons()
+
+        await interaction.response.edit_message(embed=self.embed(), view=self)
+
+    @discord.ui.button(style=discord.ButtonStyle.grey, disabled=True)
+    async def current_info(self, interaction: Interaction, btn: discord.ui.Button):
+        """Displays the current page."""
+
+        pass
+
+    @discord.ui.button(style=discord.ButtonStyle.grey, emoji='➡', custom_id='next_page')
+    async def next(self, interaction: Interaction, btn: discord.ui.Button):
+        """Goes to the next page."""
+
+        if self.interaction is not None and interaction.user.id != self.interaction.user.id:
+            return await error_embed(interaction, 'You are not allowed to do this!')
+
+        self.current_page += 1
+        self.update_buttons()
+
+        await interaction.response.edit_message(embed=self.embed(), view=self)
